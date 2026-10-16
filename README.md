@@ -1,6 +1,8 @@
 # zigbee2mqtt-mcp-container
 
-A hardened container that serves [alexpfau/zigbee2mqtt-mcp](https://github.com/alexpfau/zigbee2mqtt-mcp) over authenticated Streamable HTTP through [supercorp-ai/supergateway](https://github.com/supercorp-ai/supergateway). It is meant to run as a persistent Docker container (for example on Unraid), so MCP clients can connect to it remotely instead of launching the server on their own machine.
+A hardened container that serves [alexpfau/zigbee2mqtt-mcp](https://github.com/alexpfau/zigbee2mqtt-mcp) over authenticated Streamable HTTP through [supercorp-ai/supergateway](https://github.com/supercorp-ai/supergateway).
+
+> The Zigbee2MQTT MCP server itself is **[zigbee2mqtt-mcp](https://github.com/alexpfau/zigbee2mqtt-mcp) by Alex Pfau**, and the HTTP gateway is **[supergateway](https://github.com/supercorp-ai/supergateway) by Supercorp**. This repository only packages them, with security patches applied at build time. It is not affiliated with or endorsed by either project; please report issues with the server's own behavior upstream. It is meant to run as a persistent Docker container (for example on Unraid), so MCP clients can connect to it remotely instead of launching the server on their own machine.
 
 The container is **read-only**: it never publishes to MQTT, and exposes six passive tools that return a limited, projected view of your Zigbee network.
 
