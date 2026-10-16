@@ -13,4 +13,5 @@ id = "generic-api-key"
   condition = "AND"
   paths = ['''(^|/)usr/local/include/node/v8-internal\.h$''']
   regexTarget = "line"
-  regexes = ['''^const int kApiTaggedSize = kApiSystemPointerSize;$''']
+  # Gitleaks includes the preceding LF in a finding's line after line zero.
+  regexes = ['''^\n?const int kApiTaggedSize = kApiSystemPointerSize;\r?$''']
