@@ -82,4 +82,6 @@ Local tests: `node --test`. Set `Z2M_SECURITY_FIXTURE` to a patched, built upstr
 
 ## Licenses
 
-Both upstream projects are MIT-licensed; their notices are kept in [licenses/](licenses/) and in the image: Copyright (c) 2026 Alex Pfau and Copyright (c) 2024 Supercorp. Dependency notices remain in each package in the image.
+This repository's own code is MIT-licensed, Copyright (c) 2026 RaphaFluffa; see [LICENSE](LICENSE).
+
+Both upstream projects are also MIT-licensed; their notices are kept in [licenses/](licenses/) and in the image: Copyright (c) 2026 Alex Pfau and Copyright (c) 2024 Supercorp. Dependency notices remain in each package in the image.
