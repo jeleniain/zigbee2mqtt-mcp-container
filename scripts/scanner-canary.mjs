@@ -35,7 +35,7 @@ try {
   run('-cf', archive, '-C', directory, 'manifest.json', 'config.json', 'blobs');
   const report = join(directory, 'report.json');
   const clean = spawnSync(process.execPath, ['scripts/scan-image-layers.mjs', archive, report], { encoding: 'utf8' });
-  assert.equal(clean.status, 0, 'Exact public constant and compressed symlink must scan cleanly');
+  assert.equal(clean.status, 0, `Exact public constant and compressed symlink must scan cleanly: ${clean.stderr}`);
   writeFileSync(join(directory, 'payload', 'credential.txt'), `github_token=${canary}\n`);
   writeFileSync(join(directory, 'payload', 'nested.txt.gz'), gzipSync(`github_token=${canary}\n`));
   writeFileSync(join(directory, 'payload', 'plain.gz'), `github_token=${canary}\n`);
