@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Reserved; publication is blocked pending security review
+        description: Push the exact scanned image to GHCR (blocked until a release is approved)
         type: boolean
         default: false
       stable:
-        description: Reserved; stable publication is blocked pending security review
+        description: Also move the latest tag (requires publish; blocked until a release is approved)
         type: boolean
         default: false
 
@@ -21,11 +21,16 @@ jobs:
     timeout-minutes: 30
     env:
       TRIVY_DISABLE_TELEMETRY: 'true'
+    outputs:
+      config-digest: ${{ steps.record.outputs.config-digest }}
+      archive-sha256: ${{ steps.record.outputs.archive-sha256 }}
     steps:
-      - name: Refuse publication until security blockers are resolved
+      # Release approval is a reviewed commit that removes this step, plus
+      # required reviewers on the ghcr-release environment (checked below).
+      - name: Refuse publication until a release is approved
         if: ${{ inputs.publish || inputs.stable }}
         run: |
-          echo '::error::Publication is disabled pending output projection and deployment security review.'
+          echo '::error::Publication is disabled until the owner approves a release.'
           exit 1
       - name: Keep reports and scanner caches outside the checkout
         run: |
@@ -88,10 +93,14 @@ jobs:
           tags: zigbee2mqtt-mcp-container:validation
           platforms: linux/amd64
       - name: Record exact tested image and save every image layer
+        id: record
         run: |
           docker image inspect zigbee2mqtt-mcp-container:validation --format '{{.Id}}' > "$REPORTS/image-id.txt"
           docker save zigbee2mqtt-mcp-container:validation -o "$RUNNER_TEMP/validation-image.tar"
           sha256sum "$RUNNER_TEMP/validation-image.tar" > "$REPORTS/image-archive.sha256"
+          node scripts/image-digest.mjs archive "$RUNNER_TEMP/validation-image.tar" > "$REPORTS/image-config-digest.txt"
+          echo "config-digest=$(cat "$REPORTS/image-config-digest.txt")" >> "$GITHUB_OUTPUT"
+          echo "archive-sha256=$(cut -d ' ' -f 1 "$REPORTS/image-archive.sha256")" >> "$GITHUB_OUTPUT"
           container=$(docker create --network none zigbee2mqtt-mcp-container:validation)
           trap 'docker rm "$container" > /dev/null' EXIT
           docker export "$container" -o "$RUNNER_TEMP/validation-filesystem.tar"
@@ -110,6 +119,15 @@ jobs:
       - name: Gate fixed HIGH and CRITICAL vulnerabilities; report unfixable explicitly
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: node scripts/vulnerability-gate.mjs "$REPORTS/vulnerabilities.json"
+      # Default success(): only an archive that passed every test, scan and gate.
+      - name: Retain the exact scanned image archive for publication
+        if: ${{ success() && inputs.publish }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2, node24
+        with:
+          name: validated-image-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/validation-image.tar
+          if-no-files-found: error
+          retention-days: 1
       - name: Retain redacted security evidence even on failure
         if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2, node24
@@ -118,3 +136,63 @@ jobs:
           path: ${{ runner.temp }}/security-reports/
           if-no-files-found: error
           retention-days: 14
+
+  # Promotes the archive validate tested and scanned. It never builds: there
+  # is no Dockerfile, build action or build command in this job.
+  publish:
+    needs: validate
+    if: ${{ inputs.publish && needs.validate.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: ghcr-release
+    permissions:
+      contents: read
+      packages: write
+    env:
+      CONFIG_DIGEST: ${{ needs.validate.outputs.config-digest }}
+      ARCHIVE_SHA256: ${{ needs.validate.outputs.archive-sha256 }}
+      STABLE: ${{ inputs.stable }}
+    steps:
+      - name: Require reviewer approval on the release environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          reviewers=$(gh api "repos/$GITHUB_REPOSITORY/environments/ghcr-release" --jq '[.protection_rules[]? | select(.type == "required_reviewers")] | length')
+          if [ "$reviewers" -lt 1 ]; then
+            echo '::error::ghcr-release must require reviewers; an unprotected environment cannot publish.'
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, node24
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0, node24
+        with:
+          node-version: 24.22.0
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2, node24
+        with:
+          name: validated-image-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release
+      - name: Verify the archive is byte-identical to the scanned archive
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/release/validation-image.tar"
+          echo "$ARCHIVE_SHA256  $archive" | sha256sum --check --strict
+          test "$(node scripts/image-digest.mjs archive "$archive")" = "$CONFIG_DIGEST"
+          docker load --input "$archive"
+      - name: Push the scanned image and verify the registry config digest
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          tags=("sha-${GITHUB_SHA:0:12}")
+          if [ "$STABLE" = 'true' ]; then tags+=(latest); fi
+          echo "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          trap 'docker logout ghcr.io' EXIT
+          for tag in "${tags[@]}"; do
+            docker tag zigbee2mqtt-mcp-container:validation "$image:$tag"
+            docker push "$image:$tag"
+            test "$(node scripts/image-digest.mjs registry "$image:$tag")" = "$CONFIG_DIGEST"
+            echo "Published $image:$tag with scanned config $CONFIG_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+          done

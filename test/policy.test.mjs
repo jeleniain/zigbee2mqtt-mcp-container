@@ -156,12 +156,29 @@ test('workflow is manual, action pins are immutable, publication is disabled', (
   const actions = [...workflow.matchAll(/uses: (\S+)/g)].map((match) => match[1]);
   assert.ok(actions.length > 0);
   for (const action of actions) assert.match(action, /^[\w/-]+@[0-9a-f]{40}$/);
-  assert.match(workflow, /if: \$\{\{ inputs.publish \|\| inputs.stable \}\}/);
   assert.match(workflow, /publish:\n[\s\S]*?type: boolean\n        default: false/);
   assert.match(workflow, /stable:\n[\s\S]*?type: boolean\n        default: false/);
-  assert.ok(!workflow.includes('packages: write'));
-  assert.ok(!workflow.includes('push: true'));
-  assert.ok(!workflow.includes('docker login'));
+  // Release approval must be a reviewed commit removing this refusal.
+  assert.match(workflow, /- name: Refuse publication until a release is approved\n        if: \$\{\{ inputs.publish \|\| inputs.stable \}\}\n        run: \|\n[^\n]*\n          exit 1\n/);
+  assert.match(workflow, /^permissions:\n  contents: read\n\n/m);
+  const validate = workflow.slice(workflow.indexOf('\n  validate:\n'), workflow.indexOf('\n  publish:\n'));
+  const publish = workflow.slice(workflow.indexOf('\n  publish:\n'));
+  assert.ok(validate.length > 0 && publish.length > 0);
+  assert.ok(validate.indexOf('Refuse publication') < validate.indexOf('actions/checkout'), 'Refusal runs first');
+  for (const write of ['packages: write', 'docker login', 'docker push', 'push: true', 'secrets.']) {
+    assert.ok(!validate.includes(write), `validate must not contain ${write}`);
+  }
+  // Publication promotes the scanned archive; it never builds another image.
+  assert.match(publish, /needs: validate\n    if: \$\{\{ inputs.publish && needs.validate.result == 'success' \}\}/);
+  assert.match(publish, /environment: ghcr-release/);
+  assert.match(publish, /select\(\.type == "required_reviewers"\)/);
+  for (const build of ['build-push-action', 'docker build', 'buildx build', 'Dockerfile', 'npm ', 'setup-buildx']) {
+    assert.ok(!publish.includes(build), `publish must not contain ${build}`);
+  }
+  assert.ok(publish.indexOf('sha256sum --check --strict') < publish.indexOf('docker load'));
+  assert.ok(publish.indexOf('image-digest.mjs archive') < publish.indexOf('docker load'));
+  assert.ok(publish.indexOf('docker push') < publish.indexOf('image-digest.mjs registry'));
+  assert.match(validate, /if: \$\{\{ success\(\) && inputs.publish \}\}\n        uses: actions\/upload-artifact@/);
   assert.match(workflow, /fetch-depth: 0/);
   assert.match(workflow, /gitleaks git/);
   assert.match(workflow, /secrets-image-layers.json/);
