@@ -1,14 +1,18 @@
 // This is an authority check, not a TLS terminator or a proxy trust policy.
 export function allowedHosts(env) {
   const values = env.Z2M_HTTP_ALLOWED_HOSTS?.split(',');
-  if (!values?.length || values.length > 16) throw new Error('Explicit HTTP allowed hosts are required');
+  // Messages are fixed text: the entrypoint prints them, so never include values.
+  if (!values?.length || values.length > 16) {
+    throw new Error('Z2M_HTTP_ALLOWED_HOSTS is required: 1 to 16 comma-separated host:port values');
+  }
+  const invalid = 'Z2M_HTTP_ALLOWED_HOSTS contains an entry that is not a plain host or host:port';
   return new Set(values.map((value) => {
     const authority = value.trim().toLowerCase();
     let url;
-    try { url = new URL(`http://${authority}`); } catch { throw new Error('Invalid HTTP allowed host'); }
+    try { url = new URL(`http://${authority}`); } catch { throw new Error(invalid); }
     if (!authority || url.host !== authority || url.username || url.password ||
         url.pathname !== '/' || url.search || url.hash || authority.includes('*')) {
-      throw new Error('Invalid HTTP allowed host');
+      throw new Error(invalid);
     }
     return authority;
   }));

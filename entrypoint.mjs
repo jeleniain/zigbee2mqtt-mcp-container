@@ -61,8 +61,15 @@ export function configure(env, args = []) {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+  let args;
   try {
-    const args = configure(process.env, process.argv.slice(2));
+    args = configure(process.env, process.argv.slice(2));
+  } catch (error) {
+    // configure only throws fixed messages naming the setting, never its value.
+    console.error(`Container startup refused: ${error.message}`);
+    process.exitCode = 1;
+  }
+  if (args) try {
     const gateway = '/opt/supergateway/dist/index.js';
     process.argv = [process.execPath, gateway, ...args];
     // Upstream shuts down on stdin close. Detached Docker closes fd 0; this
@@ -72,7 +79,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
     await import(pathToFileURL(gateway).href);
   } catch {
     // Never echo environment values, URLs, or upstream exception text.
-    console.error('Container startup refused: invalid configuration or unavailable gateway');
+    console.error('Container startup refused: gateway failed to start');
     process.exitCode = 1;
   }
 }
