@@ -58,12 +58,12 @@ jobs:
           echo 'e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf  gitleaks-default.toml' | sha256sum --check --strict
           echo "$RUNNER_TEMP/scanners" >> "$GITHUB_PATH"
       - name: Scan complete fetched Git history for secrets
-        run: gitleaks git . --log-opts=--all --redact=100 --ignore-gitleaks-allow --report-format json --report-path "$REPORTS/secrets-history.json"
+        run: gitleaks git . --config scripts/gitleaks-image.toml --log-opts=--all --redact=100 --ignore-gitleaks-allow --report-format json --report-path "$REPORTS/secrets-history.json"
       - name: Prove extensionless and deleted-layer secret detection using a synthetic canary
         run: node scripts/scanner-canary.mjs
       - name: Scan working source including the Docker context inputs for secrets
         if: ${{ !cancelled() && steps.scanners.outcome == 'success' }}
-        run: gitleaks dir . --redact=100 --ignore-gitleaks-allow --max-archive-depth 3 --max-decode-depth 3 --report-format json --report-path "$REPORTS/secrets-source.json"
+        run: gitleaks dir . --config scripts/gitleaks-image.toml --redact=100 --ignore-gitleaks-allow --max-archive-depth 3 --max-decode-depth 3 --report-format json --report-path "$REPORTS/secrets-source.json"
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1, node24
       - name: Build without publishing
         id: build

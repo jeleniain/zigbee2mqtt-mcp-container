@@ -1,4 +1,4 @@
-title = "Image scan: default rules with one verified public V8 constant"
+title = "Default rules with verified public V8 size constants"
 
 [extend]
 useDefault = true
@@ -11,6 +11,6 @@ id = "generic-api-key"
   # Both the exact header path AND one of these two public assignments must match.
   [[rules.allowlists]]
   condition = "AND"
-  paths = ['''(^|/)usr/local/include/node/v8-internal\.h$''']
+  paths = ['''(^|/)usr/local/include/node/v8-internal\.h$''', '''^scripts/scanner-canary\.mjs$''']
   regexTarget = "match"
   regexes = ['''^kApiTaggedSize = kApi(Int32Size|SystemPointerSize);$''']
