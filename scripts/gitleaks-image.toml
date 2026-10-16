@@ -8,10 +8,9 @@ id = "generic-api-key"
 
   # Public C++ pointer-size constant, not a credential. Verified in Node 24.22.0:
   # https://github.com/nodejs/node/blob/f14cd3aa7bf9ca8df2cc5b8bb14beb0f335b1d93/deps/v8/include/v8-internal.h#L187
-  # Both the exact header path AND the complete constant line must match.
+  # Both the exact header path AND one of these two public assignments must match.
   [[rules.allowlists]]
   condition = "AND"
   paths = ['''(^|/)usr/local/include/node/v8-internal\.h$''']
-  regexTarget = "line"
-  # Gitleaks includes the preceding LF in a finding's line after line zero.
-  regexes = ['''^\n?const int kApiTaggedSize = kApiSystemPointerSize;\r?$''']
+  regexTarget = "match"
+  regexes = ['''^kApiTaggedSize = kApi(Int32Size|SystemPointerSize);$''']

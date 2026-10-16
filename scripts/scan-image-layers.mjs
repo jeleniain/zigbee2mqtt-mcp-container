@@ -45,8 +45,17 @@ const extractRegular = (source, destination) => {
   // dpkg alternatives databases can have a .gz name but contain plain text.
   // Do not exclude them: scan their bytes with a neutral suffix instead.
   for (const entry of readdirSync(destination, { recursive: true, withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith('.gz')) continue;
+    if (!entry.isFile()) continue;
     const path = join(entry.parentPath, entry.name);
+    // archives.Identify treats '.browser' as a Brotli suffix. These are
+    // JavaScript/type-source filenames, so scan the same bytes under a neutral name.
+    if (/\.browser\.(js|d\.ts)$/.test(entry.name)) {
+      const normalized = path.replace(/\.browser\.(js|d\.ts)$/, '.web-source.$1');
+      assert.ok(!existsSync(normalized), 'Cannot overwrite a browser source scan copy');
+      renameSync(path, normalized);
+      continue;
+    }
+    if (!entry.name.endsWith('.gz')) continue;
     const fd = openSync(path, 'r');
     const magic = Buffer.alloc(2);
     try { readSync(fd, magic, 0, 2, 0); } finally { closeSync(fd); }

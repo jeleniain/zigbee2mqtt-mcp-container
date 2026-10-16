@@ -20,10 +20,11 @@ try {
   const headerDirectory = join(directory, 'payload', 'usr/local/include/node');
   mkdirSync(headerDirectory, { recursive: true });
   const header = join(headerDirectory, 'v8-internal.h');
-  writeFileSync(header, '#else\nconst int kApiTaggedSize = kApiSystemPointerSize;\n');
+  writeFileSync(header, '#if TEST\nconst int kApiTaggedSize = kApiInt32Size;\n#else\nconst int kApiTaggedSize = kApiSystemPointerSize;\n#endif\n');
   // A dangling compressed symlink must not cause a decompression error.
   symlinkSync('absent.gz', join(directory, 'payload', 'alias.gz'));
   writeFileSync(join(directory, 'payload', 'plain.gz'), 'auto\n/usr/share/man/man7/builtins.7.gz\n');
+  writeFileSync(join(directory, 'payload', 'index.browser.js'), 'export const test = true;\n');
   writeFileSync(join(directory, 'removed', '.wh.credential.txt'), '');
   run('-cf', join(directory, 'blobs', 'first'), '-C', join(directory, 'payload'), '.');
   run('-cf', join(directory, 'blobs', 'second'), '-C', join(directory, 'removed'), '.');
@@ -39,6 +40,7 @@ try {
   writeFileSync(join(directory, 'payload', 'credential.txt'), `github_token=${canary}\n`);
   writeFileSync(join(directory, 'payload', 'nested.txt.gz'), gzipSync(`github_token=${canary}\n`));
   writeFileSync(join(directory, 'payload', 'plain.gz'), `github_token=${canary}\n`);
+  writeFileSync(join(directory, 'payload', 'index.browser.js'), `github_token=${canary}\n`);
   mkdirSync(join(directory, 'payload', 'node_modules/example'), { recursive: true });
   writeFileSync(join(directory, 'payload', 'node_modules/example/index.js'), `github_token=${canary}\n`);
   writeFileSync(header, `const int kApiTaggedSize = kApiSystemPointerSize;\ngithub_token=${canary}\n`);
@@ -48,7 +50,7 @@ try {
   assert.notEqual(result.status, 0, 'Deleted-layer canary must fail the scanner');
   const findings = JSON.parse(readFileSync(report, 'utf8'));
   assert.ok(findings.some((finding) => finding.RuleID === 'github-pat'));
-  for (const path of ['credential.txt', 'nested.txt.gz', 'v8-internal.h', 'plain.uncompressed-text', 'node_modules/example/index.js']) {
+  for (const path of ['credential.txt', 'nested.txt.gz', 'v8-internal.h', 'plain.uncompressed-text', 'index.web-source.js', 'node_modules/example/index.js']) {
     assert.ok(findings.some((finding) => finding.File.includes(path)), `Canary not detected in ${path}`);
   }
   assert.ok(!/Scanner reported an analysis error/.test(result.stderr), 'Canary scan must have complete coverage');
