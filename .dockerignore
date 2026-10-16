@@ -1,0 +1,9 @@
+# Positive list: secrets, Git history, tests, and workflows never enter the context.
+**
+!Dockerfile
+!.dockerignore
+!entrypoint.mjs
+!child.sh
+!licenses/
+!licenses/zigbee2mqtt-mcp.LICENSE
+!licenses/supergateway.LICENSE

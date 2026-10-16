@@ -1,0 +1,87 @@
+name: Manual Container Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a uniquely tagged image to GHCR after validation
+        type: boolean
+        default: false
+      stable:
+        description: Also move the stable tag (requires publish)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.21.0
+      - name: Test guards, fixed policy, pins, and license bytes
+        run: node --test
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Build without publishing
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          load: true
+          push: false
+          tags: zigbee2mqtt-mcp-container:validation
+          platforms: linux/amd64
+      - name: Offline HTTP, allowlist, session retention, and SIGTERM smoke test
+        run: node scripts/container-smoke.mjs zigbee2mqtt-mcp-container:validation
+
+  publish:
+    needs: validate
+    if: ${{ inputs.publish && github.ref_name == github.event.repository.default_branch }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Select explicit publication tags
+        id: image
+        env:
+          REPOSITORY: ${{ github.repository }}
+          STABLE: ${{ inputs.stable }}
+        shell: bash
+        run: |
+          image="ghcr.io/${REPOSITORY,,}"
+          tag="${image}:sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          {
+            echo 'tags<<TAGS'
+            echo "$tag"
+            if [ "$STABLE" = true ]; then echo "${image}:stable"; fi
+            echo 'TAGS'
+          } >> "$GITHUB_OUTPUT"
+      - name: Authenticate only for explicitly requested publication
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin
+      - name: Publish
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.image.outputs.tags }}
+          provenance: mode=max
+          sbom: true
+      - name: Remove registry credentials
+        if: ${{ always() }}
+        run: docker logout ghcr.io
