@@ -20,8 +20,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      REPORTS: ${{ runner.temp }}/security-reports
-      TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
       TRIVY_DISABLE_TELEMETRY: 'true'
     steps:
       - name: Refuse publication until security blockers are resolved
@@ -29,6 +27,10 @@ jobs:
         run: |
           echo '::error::Publication is disabled pending output projection and deployment security review.'
           exit 1
+      - name: Keep reports and scanner caches outside the checkout
+        run: |
+          echo "REPORTS=$RUNNER_TEMP/security-reports" >> "$GITHUB_ENV"
+          echo "TRIVY_CACHE_DIR=$RUNNER_TEMP/trivy-cache" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, node24
         with:
           persist-credentials: false
