@@ -68,6 +68,7 @@ test('container starts have unique prefixes and child launcher adds its PID then
   assert.ok(child.includes('Z2M_CONTAINER_CLIENT_PREFIX:?'));
   assert.ok(child.includes('Z2M_MQTT_CLIENT_ID="${Z2M_CONTAINER_CLIENT_PREFIX}-$$"'));
   assert.ok(child.includes('exec /usr/local/bin/node /opt/zigbee2mqtt-mcp/dist/index.js'));
+  assert.ok(child.indexOf('unset SUPERGATEWAY_API_KEY') < child.indexOf('exec /usr/local/bin/node'));
   assert.ok(!child.includes('\r'));
 });
 
@@ -133,7 +134,7 @@ test('Docker context is a positive list and runtime is non-root with compiled lo
     '!licenses/', '!licenses/zigbee2mqtt-mcp.LICENSE', '!licenses/supergateway.LICENSE',
   ]);
   const docker = read('Dockerfile');
-  assert.equal((docker.match(/FROM node:24\.21\.0-bookworm-slim@sha256:[a-f0-9]{64}/g) ?? []).length, 2);
+  assert.equal((docker.match(/FROM node:24\.22\.0-bookworm-slim@sha256:[a-f0-9]{64}/g) ?? []).length, 2);
   assert.equal((docker.match(/ADD --checksum=sha256:[a-f0-9]{64}/g) ?? []).length, 2);
   assert.match(docker, /USER node/);
   assert.match(docker, /STOPSIGNAL SIGTERM/);
@@ -142,18 +143,23 @@ test('Docker context is a positive list and runtime is non-root with compiled lo
   assert.ok(!read('child.sh').includes('npx'));
 });
 
-test('workflow is manual, action pins are immutable, publication is separately gated', () => {
+test('workflow is manual, action pins are immutable, publication is disabled', () => {
   const workflow = read('.github/workflows/build.yml');
   assert.match(workflow, /on:\n  workflow_dispatch:/);
   assert.ok(!/^  (push|pull_request|schedule):/m.test(workflow));
   const actions = [...workflow.matchAll(/uses: (\S+)/g)].map((match) => match[1]);
   assert.ok(actions.length > 0);
   for (const action of actions) assert.match(action, /^[\w/-]+@[0-9a-f]{40}$/);
-  assert.match(workflow, /if: \$\{\{ inputs.publish && github.ref_name == github.event.repository.default_branch \}\}/);
+  assert.match(workflow, /if: \$\{\{ inputs.publish \|\| inputs.stable \}\}/);
   assert.match(workflow, /publish:\n[\s\S]*?type: boolean\n        default: false/);
   assert.match(workflow, /stable:\n[\s\S]*?type: boolean\n        default: false/);
-  assert.equal((workflow.match(/packages: write/g) ?? []).length, 1);
-  assert.match(workflow, /if \[ "\$STABLE" = true \]; then echo "\$\{image\}:stable"; fi/);
+  assert.ok(!workflow.includes('packages: write'));
+  assert.ok(!workflow.includes('push: true'));
+  assert.ok(!workflow.includes('docker login'));
+  assert.match(workflow, /fetch-depth: 0/);
+  assert.match(workflow, /gitleaks git/);
+  assert.match(workflow, /secrets-image-layers.json/);
+  assert.match(workflow, /vulnerability-gate.mjs/);
   assert.match(workflow, /run: node --test/);
   assert.match(read('scripts/container-smoke.mjs'), /'--network', 'none'/);
 });

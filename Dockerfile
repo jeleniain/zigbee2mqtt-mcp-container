@@ -1,4 +1,4 @@
-FROM node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS build
+FROM node:24.22.0-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS build
 
 # Archive hashes verified against these exact upstream commits, not release tags.
 ADD --checksum=sha256:3fd36c5e167e530c242036ba789d72a367b62d498ba189c29e2b884c94c02b62 https://codeload.github.com/alexpfau/zigbee2mqtt-mcp/tar.gz/508a9215f78672f43bd64571d38c3ae2342ea040 /tmp/zigbee2mqtt-mcp.tar.gz
@@ -19,7 +19,7 @@ RUN npm ci --ignore-scripts --no-audit --no-fund \
     && npm run build \
     && npm prune --omit=dev --ignore-scripts --no-audit --no-fund
 
-FROM node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS runtime
+FROM node:24.22.0-bookworm-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS runtime
 LABEL org.opencontainers.image.title="zigbee2mqtt-mcp-container" \
     io.zigbee2mqtt-mcp.revision="508a9215f78672f43bd64571d38c3ae2342ea040" \
     io.supergateway.revision="8079a99bd8db85700f415b6336b44b81c0ab5483"

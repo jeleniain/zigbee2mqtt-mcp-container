@@ -76,6 +76,8 @@ async function probe() {
   }
   assert.deepEqual(children(), original, 'Completed HTTP requests retain the same session child');
   const environment = readFileSync(`/proc/${original[0]}/environ`, 'utf8');
+  assert.ok(!environment.includes('SUPERGATEWAY_API_KEY='), 'Child must not inherit the gateway credential');
+  assert.ok(!environment.includes(key), 'Child environment must not contain the gateway key value');
   assert.match(environment, /Z2M_WRITE_MODE=off\0/);
   assert.match(environment, /Z2M_MQTT_REJECT_UNAUTHORIZED=true\0/);
   assert.match(environment, /Z2M_LOG_LEVEL=silent\0/);

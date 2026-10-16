@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish a uniquely tagged image to GHCR after validation
+        description: Reserved; publication is blocked pending security review
         type: boolean
         default: false
       stable:
-        description: Also move the stable tag (requires publish)
+        description: Reserved; stable publication is blocked pending security review
         type: boolean
         default: false
 
@@ -18,70 +18,81 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
+    env:
+      REPORTS: ${{ runner.temp }}/security-reports
+      TRIVY_CACHE_DIR: ${{ runner.temp }}/trivy-cache
+      TRIVY_DISABLE_TELEMETRY: 'true'
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Refuse publication until security blockers are resolved
+        if: ${{ inputs.publish || inputs.stable }}
+        run: |
+          echo '::error::Publication is disabled pending output projection and deployment security review.'
+          exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, node24
         with:
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0, node24
         with:
-          node-version: 24.21.0
+          node-version: 24.22.0
+          package-manager-cache: false
       - name: Test guards, fixed policy, pins, and license bytes
         run: node --test
-      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Install checksum-verified security scanners
+        id: scanners
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/scanners" "$REPORTS"
+          cd "$RUNNER_TEMP/scanners"
+          curl --fail --location --retry 3 -o trivy.tar.gz https://github.com/aquasecurity/trivy/releases/download/v0.76.0/trivy_0.76.0_Linux-64bit.tar.gz
+          echo 'e24b1c51293c1b15e4ba8d45bbc7891ba053f90278ec2698f3562c993e145fe7  trivy.tar.gz' | sha256sum --check --strict
+          tar -xzf trivy.tar.gz trivy
+          curl --fail --location --retry 3 -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz' | sha256sum --check --strict
+          tar -xzf gitleaks.tar.gz gitleaks
+          echo "$RUNNER_TEMP/scanners" >> "$GITHUB_PATH"
+      - name: Scan complete fetched Git history for secrets
+        run: gitleaks git . --log-opts=--all --redact=100 --ignore-gitleaks-allow --report-format json --report-path "$REPORTS/secrets-history.json"
+      - name: Scan working source including the Docker context inputs for secrets
+        if: ${{ !cancelled() && steps.scanners.outcome == 'success' }}
+        run: gitleaks dir . --redact=100 --ignore-gitleaks-allow --max-archive-depth 3 --max-decode-depth 3 --report-format json --report-path "$REPORTS/secrets-source.json"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1, node24
       - name: Build without publishing
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0, node24
         with:
           context: .
           load: true
           push: false
           tags: zigbee2mqtt-mcp-container:validation
           platforms: linux/amd64
-      - name: Offline HTTP, allowlist, session retention, and SIGTERM smoke test
-        run: node scripts/container-smoke.mjs zigbee2mqtt-mcp-container:validation
-
-  publish:
-    needs: validate
-    if: ${{ inputs.publish && github.ref_name == github.event.repository.default_branch }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          persist-credentials: false
-      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
-      - name: Select explicit publication tags
-        id: image
-        env:
-          REPOSITORY: ${{ github.repository }}
-          STABLE: ${{ inputs.stable }}
-        shell: bash
+      - name: Record exact tested image and save every image layer
         run: |
-          image="ghcr.io/${REPOSITORY,,}"
-          tag="${image}:sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          {
-            echo 'tags<<TAGS'
-            echo "$tag"
-            if [ "$STABLE" = true ]; then echo "${image}:stable"; fi
-            echo 'TAGS'
-          } >> "$GITHUB_OUTPUT"
-      - name: Authenticate only for explicitly requested publication
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GHCR_USER: ${{ github.actor }}
-        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin
-      - name: Publish
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
-        with:
-          context: .
-          push: true
-          platforms: linux/amd64
-          tags: ${{ steps.image.outputs.tags }}
-          provenance: mode=max
-          sbom: true
-      - name: Remove registry credentials
+          docker image inspect zigbee2mqtt-mcp-container:validation --format '{{.Id}}' > "$REPORTS/image-id.txt"
+          docker save zigbee2mqtt-mcp-container:validation -o "$RUNNER_TEMP/validation-image.tar"
+          sha256sum "$RUNNER_TEMP/validation-image.tar" > "$REPORTS/image-archive.sha256"
+      - name: Offline HTTP, child credential isolation, session retention, and SIGTERM smoke test
+        id: smoke
+        run: node scripts/container-smoke.mjs zigbee2mqtt-mcp-container:validation
+      - name: Scan image configuration and all saved layers for secrets (including deleted files)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: gitleaks dir "$RUNNER_TEMP/validation-image.tar" --redact=100 --ignore-gitleaks-allow --max-archive-depth 4 --max-decode-depth 3 --report-format json --report-path "$REPORTS/secrets-image-layers.json"
+      - name: Report all runtime OS and npm vulnerabilities including unfixable
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: trivy image --input "$RUNNER_TEMP/validation-image.tar" --scanners vuln --pkg-types os,library --format json --output "$REPORTS/vulnerabilities.json" --exit-code 0
+      - name: Generate runtime CycloneDX SBOM (build-only dev dependencies are not included)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: trivy image --input "$RUNNER_TEMP/validation-image.tar" --format cyclonedx --output "$REPORTS/runtime.cdx.json"
+      - name: Gate fixed HIGH and CRITICAL vulnerabilities; report unfixable explicitly
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: node scripts/vulnerability-gate.mjs "$REPORTS/vulnerabilities.json"
+      - name: Retain redacted security evidence even on failure
         if: ${{ always() }}
-        run: docker logout ghcr.io
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2, node24
+        with:
+          name: security-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/security-reports/
+          if-no-files-found: error
+          retention-days: 14
