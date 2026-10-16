@@ -1,0 +1,16 @@
+title = "Image scan: default rules with one verified public V8 constant"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+  # Public C++ pointer-size constant, not a credential. Verified in Node 24.22.0:
+  # https://github.com/nodejs/node/blob/f14cd3aa7bf9ca8df2cc5b8bb14beb0f335b1d93/deps/v8/include/v8-internal.h#L187
+  # Both the exact header path AND the complete constant line must match.
+  [[rules.allowlists]]
+  condition = "AND"
+  paths = ['''(^|/)usr/local/include/node/v8-internal\.h$''']
+  regexTarget = "line"
+  regexes = ['''^const int kApiTaggedSize = kApiSystemPointerSize;$''']

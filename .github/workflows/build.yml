@@ -77,12 +77,15 @@ jobs:
           docker image inspect zigbee2mqtt-mcp-container:validation --format '{{.Id}}' > "$REPORTS/image-id.txt"
           docker save zigbee2mqtt-mcp-container:validation -o "$RUNNER_TEMP/validation-image.tar"
           sha256sum "$RUNNER_TEMP/validation-image.tar" > "$REPORTS/image-archive.sha256"
+          container=$(docker create --network none zigbee2mqtt-mcp-container:validation)
+          trap 'docker rm "$container" > /dev/null' EXIT
+          docker export "$container" -o "$RUNNER_TEMP/validation-filesystem.tar"
       - name: Offline HTTP, child credential isolation, session retention, and SIGTERM smoke test
         id: smoke
         run: node scripts/container-smoke.mjs zigbee2mqtt-mcp-container:validation
       - name: Scan image configuration and all saved layers for secrets (including deleted files)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: node scripts/scan-image-layers.mjs "$RUNNER_TEMP/validation-image.tar" "$REPORTS/secrets-image-layers.json"
+        run: node scripts/scan-image-layers.mjs "$RUNNER_TEMP/validation-image.tar" "$REPORTS/secrets-image-layers.json" "$RUNNER_TEMP/validation-filesystem.tar"
       - name: Report all runtime OS and npm vulnerabilities including unfixable
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: trivy image --input "$RUNNER_TEMP/validation-image.tar" --scanners vuln --pkg-types os,library --format json --output "$REPORTS/vulnerabilities.json" --exit-code 0
