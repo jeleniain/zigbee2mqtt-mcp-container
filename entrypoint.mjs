@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { allowedHosts } from './http-policy.mjs';
 
 export const tools = Object.freeze([
   'z2m_connection_status',
@@ -14,6 +15,7 @@ export const tools = Object.freeze([
 
 export function configure(env, args = []) {
   if (args.length) throw new Error('Runtime command overrides are not supported');
+  allowedHosts(env);
   const key = env.SUPERGATEWAY_API_KEY?.trim();
   if (!key || !/^[\x21-\x7e]+$/.test(key)) {
     throw new Error('SUPERGATEWAY_API_KEY must contain a nonempty printable ASCII key without spaces');
@@ -31,8 +33,8 @@ export function configure(env, args = []) {
   } catch {
     throw new Error('Z2M_MQTT_URL must be a valid broker URL');
   }
-  if (!['mqtt:', 'mqtts:', 'ws:', 'wss:'].includes(broker.protocol) || !broker.hostname) {
-    throw new Error('Z2M_MQTT_URL must use mqtt, mqtts, ws, or wss with a hostname');
+  if (!['mqtts:', 'wss:'].includes(broker.protocol) || !broker.hostname) {
+    throw new Error('Z2M_MQTT_URL must use encrypted mqtts or wss with a hostname');
   }
   if (broker.username || broker.password || /^[^:]+:\/\/[^/?#]*@/.test(raw)) {
     throw new Error('Use Z2M_MQTT_USERNAME and Z2M_MQTT_PASSWORD, not URL userinfo');

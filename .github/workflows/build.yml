@@ -39,7 +39,20 @@ jobs:
         with:
           node-version: 24.22.0
           package-manager-cache: false
-      - name: Test guards, fixed policy, pins, and license bytes
+      - name: Build the checksum-verified, patched upstream for real-handler leak tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$RUNNER_TEMP/z2m-security-fixture"
+          mkdir -p "$fixture"
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/z2m.tar.gz" https://codeload.github.com/alexpfau/zigbee2mqtt-mcp/tar.gz/508a9215f78672f43bd64571d38c3ae2342ea040
+          echo "3fd36c5e167e530c242036ba789d72a367b62d498ba189c29e2b884c94c02b62  $RUNNER_TEMP/z2m.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/z2m.tar.gz" --strip-components=1 -C "$fixture"
+          node dependencies/overlay.mjs zigbee2mqtt-mcp "$fixture"
+          node scripts/patch-upstream-security.mjs "$fixture"
+          (cd "$fixture" && npm ci --ignore-scripts --no-audit --no-fund && npm run build)
+          echo "Z2M_SECURITY_FIXTURE=$fixture" >> "$GITHUB_ENV"
+      - name: Test guards, fixed policy, pins, license bytes, and real-handler leak boundary
         run: node --test
       - name: Install checksum-verified security scanners
         id: scanners

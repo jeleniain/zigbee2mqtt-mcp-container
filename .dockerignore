@@ -4,6 +4,17 @@
 !.dockerignore
 !entrypoint.mjs
 !child.sh
+!http-policy.mjs
+!child-policy.mjs
 !licenses/
 !licenses/zigbee2mqtt-mcp.LICENSE
 !licenses/supergateway.LICENSE
+!dependencies/
+!dependencies/overlay.mjs
+!dependencies/trim-runtime.mjs
+!dependencies/zigbee2mqtt-mcp.package-lock.json
+!dependencies/supergateway.package-lock.json
+!scripts/
+!scripts/install-gateway-policy.mjs
+!scripts/patch-upstream-security.mjs
+!scripts/security-boundary.mjs

@@ -43,6 +43,9 @@ async function probe() {
   }
   assert.ok(ready, 'Gateway must start and reject anonymous requests');
   assert.equal((await fetch(endpoint, { headers: { authorization: 'Bearer wrong' } })).status, 401);
+  for (const extra of [{ host: 'unexpected.example' }, { origin: 'https://unexpected.example' }, { origin: 'null' }]) {
+    assert.equal((await fetch(endpoint, { headers: { authorization: `Bearer ${key}`, ...extra } })).status, 403);
+  }
   const rpc = async (message) => {
     const response = await fetch(endpoint, {
       method: 'POST', headers, body: JSON.stringify(message), signal: AbortSignal.timeout(5000),
@@ -87,8 +90,9 @@ async function probe() {
 
 try {
   docker('run', '--detach', '--name', name, '--init', '--read-only', '--cap-drop', 'ALL',
-    '--security-opt', 'no-new-privileges', '--network', 'none',
-    '--env', `SUPERGATEWAY_API_KEY=${key}`, '--env', 'Z2M_MQTT_URL=mqtt://127.0.0.1:1883', image);
+    '--security-opt', 'no-new-privileges', '--network', 'none', '--pids-limit', '64', '--memory', '256m', '--cpus', '1',
+    '--env', `SUPERGATEWAY_API_KEY=${key}`, '--env', 'Z2M_MQTT_URL=mqtts://127.0.0.1:8883',
+    '--env', 'Z2M_HTTP_ALLOWED_HOSTS=127.0.0.1:8000', image);
   docker('exec', name, 'node', '--input-type=module', '-e', `await (${probe.toString()})()`);
   docker('stop', '--time', '10', name);
   assert.equal(docker('inspect', '--format', '{{.State.ExitCode}}', name), '0', 'SIGTERM must exit cleanly, not SIGKILL');

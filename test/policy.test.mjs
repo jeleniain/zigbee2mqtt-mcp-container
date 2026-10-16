@@ -10,7 +10,8 @@ const root = new URL('../', import.meta.url);
 const read = (path) => readFileSync(new URL(path, root), 'utf8');
 const valid = () => ({
   SUPERGATEWAY_API_KEY: 'test-only-not-a-real-secret',
-  Z2M_MQTT_URL: 'mqtt://127.0.0.1:1883',
+  Z2M_MQTT_URL: 'mqtts://127.0.0.1:8883',
+  Z2M_HTTP_ALLOWED_HOSTS: '127.0.0.1:8000',
 });
 
 test('missing, empty, whitespace, and malformed API keys fail closed', () => {
@@ -21,13 +22,13 @@ test('missing, empty, whitespace, and malformed API keys fail closed', () => {
 });
 
 test('broker URL is required, supported, and credential-free', () => {
-  for (const url of [undefined, '', 'not a URL', 'http://broker', 'mqtt:///']) {
+  for (const url of [undefined, '', 'not a URL', 'http://broker', 'mqtt:///', 'mqtt://broker', 'ws://broker/mqtt']) {
     assert.throws(() => configure({ ...valid(), Z2M_MQTT_URL: url }), /Z2M_MQTT_URL/);
   }
-  for (const url of ['mqtt://user:password@broker', 'mqtt://@broker', 'wss://user@broker/mqtt']) {
+  for (const url of ['mqtts://user:password@broker', 'mqtts://@broker', 'wss://user@broker/mqtt']) {
     assert.throws(() => configure({ ...valid(), Z2M_MQTT_URL: url }), /userinfo/);
   }
-  for (const url of ['mqtt://broker', 'mqtts://broker:8883', 'ws://broker/mqtt', 'wss://broker/mqtt']) {
+  for (const url of ['mqtts://broker:8883', 'wss://broker/mqtt']) {
     assert.doesNotThrow(() => configure({ ...valid(), Z2M_MQTT_URL: url }));
   }
 });
@@ -73,7 +74,7 @@ test('container starts have unique prefixes and child launcher adds its PID then
 });
 
 test('real startup rejects invalid configuration without revealing credentials', () => {
-  const env = { ...process.env, ...valid(), Z2M_MQTT_URL: 'mqtt://private:do-not-print@broker' };
+  const env = { ...process.env, ...valid(), Z2M_MQTT_URL: 'mqtts://private:do-not-print@broker' };
   const entrypoint = fileURLToPath(new URL('../entrypoint.mjs', import.meta.url));
   const result = spawnSync(process.execPath, [entrypoint], { env, encoding: 'utf8' });
   assert.equal(result.status, 1);
@@ -130,12 +131,22 @@ test('MIT licenses match upstream bytes at pinned commits', () => {
 test('Docker context is a positive list and runtime is non-root with compiled local entrypoints', () => {
   const entries = read('.dockerignore').split('\n').filter((line) => line && !line.startsWith('#'));
   assert.deepEqual(entries, [
-    '**', '!Dockerfile', '!.dockerignore', '!entrypoint.mjs', '!child.sh',
+    '**', '!Dockerfile', '!.dockerignore', '!entrypoint.mjs', '!child.sh', '!http-policy.mjs', '!child-policy.mjs',
     '!licenses/', '!licenses/zigbee2mqtt-mcp.LICENSE', '!licenses/supergateway.LICENSE',
+    '!dependencies/', '!dependencies/overlay.mjs', '!dependencies/trim-runtime.mjs',
+    '!dependencies/zigbee2mqtt-mcp.package-lock.json', '!dependencies/supergateway.package-lock.json',
+    '!scripts/', '!scripts/install-gateway-policy.mjs', '!scripts/patch-upstream-security.mjs', '!scripts/security-boundary.mjs',
   ]);
   const docker = read('Dockerfile');
-  assert.equal((docker.match(/FROM node:24\.22\.0-bookworm-slim@sha256:[a-f0-9]{64}/g) ?? []).length, 2);
+  const stages = docker.match(/^FROM .+$/gm);
+  assert.equal(stages.length, 2);
+  assert.match(stages[0], /^FROM node:24\.22\.0-bookworm-slim@sha256:[a-f0-9]{64} AS build$/);
+  // Runtime does not inherit npm or Corepack from the Node image.
+  assert.match(stages[1], /^FROM debian:bookworm-slim@sha256:[a-f0-9]{64} AS runtime$/);
   assert.equal((docker.match(/ADD --checksum=sha256:[a-f0-9]{64}/g) ?? []).length, 2);
+  // Output projection and publish refusal must be compiled in before the upstream build.
+  assert.ok(docker.indexOf('patch-upstream-security.mjs /build/zigbee2mqtt-mcp') < docker.indexOf('npm run build'));
+  assert.match(docker, /COPY entrypoint\.mjs child\.sh http-policy\.mjs child-policy\.mjs \.\//);
   assert.match(docker, /USER node/);
   assert.match(docker, /STOPSIGNAL SIGTERM/);
   assert.match(docker, /ENTRYPOINT \["node", "\/opt\/container\/entrypoint.mjs"\]/);
