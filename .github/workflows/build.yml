@@ -57,6 +57,8 @@ jobs:
           echo "$RUNNER_TEMP/scanners" >> "$GITHUB_PATH"
       - name: Scan complete fetched Git history for secrets
         run: gitleaks git . --log-opts=--all --redact=100 --ignore-gitleaks-allow --report-format json --report-path "$REPORTS/secrets-history.json"
+      - name: Prove extensionless and deleted-layer secret detection using a synthetic canary
+        run: node scripts/scanner-canary.mjs
       - name: Scan working source including the Docker context inputs for secrets
         if: ${{ !cancelled() && steps.scanners.outcome == 'success' }}
         run: gitleaks dir . --redact=100 --ignore-gitleaks-allow --max-archive-depth 3 --max-decode-depth 3 --report-format json --report-path "$REPORTS/secrets-source.json"
@@ -80,7 +82,7 @@ jobs:
         run: node scripts/container-smoke.mjs zigbee2mqtt-mcp-container:validation
       - name: Scan image configuration and all saved layers for secrets (including deleted files)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: gitleaks dir "$RUNNER_TEMP/validation-image.tar" --redact=100 --ignore-gitleaks-allow --max-archive-depth 4 --max-decode-depth 3 --report-format json --report-path "$REPORTS/secrets-image-layers.json"
+        run: node scripts/scan-image-layers.mjs "$RUNNER_TEMP/validation-image.tar" "$REPORTS/secrets-image-layers.json"
       - name: Report all runtime OS and npm vulnerabilities including unfixable
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: trivy image --input "$RUNNER_TEMP/validation-image.tar" --scanners vuln --pkg-types os,library --format json --output "$REPORTS/vulnerabilities.json" --exit-code 0
