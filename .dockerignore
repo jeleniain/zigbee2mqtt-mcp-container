@@ -3,7 +3,6 @@
 !Dockerfile
 !.dockerignore
 !entrypoint.mjs
-!child.sh
 !http-policy.mjs
 !child-policy.mjs
 !licenses/

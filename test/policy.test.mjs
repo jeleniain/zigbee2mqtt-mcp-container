@@ -50,7 +50,7 @@ test('exact six-tool passive allowlist and session settings cannot drift silentl
   ]);
   const args = configure(valid());
   assert.deepEqual(args, [
-    '--stdio', 'exec /bin/sh /opt/container/child.sh',
+    '--stdio', 'z2m-application',
     '--outputTransport', 'streamableHttp', '--host', '0.0.0.0',
     '--port', '8000', '--streamableHttpPath', '/mcp', '--stateful',
     '--sessionTimeout', '1800000', '--logLevel', 'none',
@@ -58,19 +58,13 @@ test('exact six-tool passive allowlist and session settings cannot drift silentl
   ]);
 });
 
-test('container starts have unique prefixes and child launcher adds its PID then execs', () => {
+test('container starts have unique prefixes for per-child MQTT client IDs', () => {
   const first = valid();
   const second = valid();
   configure(first);
   configure(second);
   assert.match(first.Z2M_CONTAINER_CLIENT_PREFIX, /^z2m-mcp-[0-9a-f-]{36}$/);
   assert.notEqual(first.Z2M_CONTAINER_CLIENT_PREFIX, second.Z2M_CONTAINER_CLIENT_PREFIX);
-  const child = read('child.sh');
-  assert.ok(child.includes('Z2M_CONTAINER_CLIENT_PREFIX:?'));
-  assert.ok(child.includes('Z2M_MQTT_CLIENT_ID="${Z2M_CONTAINER_CLIENT_PREFIX}-$$"'));
-  assert.ok(child.includes('exec /usr/local/bin/node /opt/zigbee2mqtt-mcp/dist/index.js'));
-  assert.ok(child.indexOf('unset SUPERGATEWAY_API_KEY') < child.indexOf('exec /usr/local/bin/node'));
-  assert.ok(!child.includes('\r'));
 });
 
 test('real startup rejects invalid configuration without revealing credentials', () => {
@@ -131,7 +125,7 @@ test('MIT licenses match upstream bytes at pinned commits', () => {
 test('Docker context is a positive list and runtime is non-root with compiled local entrypoints', () => {
   const entries = read('.dockerignore').split('\n').filter((line) => line && !line.startsWith('#'));
   assert.deepEqual(entries, [
-    '**', '!Dockerfile', '!.dockerignore', '!entrypoint.mjs', '!child.sh', '!http-policy.mjs', '!child-policy.mjs',
+    '**', '!Dockerfile', '!.dockerignore', '!entrypoint.mjs', '!http-policy.mjs', '!child-policy.mjs',
     '!licenses/', '!licenses/zigbee2mqtt-mcp.LICENSE', '!licenses/supergateway.LICENSE',
     '!dependencies/', '!dependencies/overlay.mjs', '!dependencies/trim-runtime.mjs',
     '!dependencies/zigbee2mqtt-mcp.package-lock.json', '!dependencies/supergateway.package-lock.json',
@@ -141,17 +135,18 @@ test('Docker context is a positive list and runtime is non-root with compiled lo
   const stages = docker.match(/^FROM .+$/gm);
   assert.equal(stages.length, 2);
   assert.match(stages[0], /^FROM node:24\.22\.0-bookworm-slim@sha256:[a-f0-9]{64} AS build$/);
-  // Runtime does not inherit npm or Corepack from the Node image.
-  assert.match(stages[1], /^FROM debian:bookworm-slim@sha256:[a-f0-9]{64} AS runtime$/);
+  // Runtime has no shell, package manager, npm or Corepack, and runs no commands.
+  assert.match(stages[1], /^FROM gcr\.io\/distroless\/cc-debian12:nonroot@sha256:[a-f0-9]{64} AS runtime$/);
+  assert.ok(!docker.slice(docker.indexOf(stages[1])).includes('\nRUN '));
   assert.equal((docker.match(/ADD --checksum=sha256:[a-f0-9]{64}/g) ?? []).length, 2);
   // Output projection and publish refusal must be compiled in before the upstream build.
   assert.ok(docker.indexOf('patch-upstream-security.mjs /build/zigbee2mqtt-mcp') < docker.indexOf('npm run build'));
-  assert.match(docker, /COPY entrypoint\.mjs child\.sh http-policy\.mjs child-policy\.mjs \.\//);
-  assert.match(docker, /USER node/);
+  assert.match(docker, /COPY entrypoint\.mjs http-policy\.mjs child-policy\.mjs \.\//);
+  assert.match(docker, /^USER 65532:65532$/m);
   assert.match(docker, /STOPSIGNAL SIGTERM/);
-  assert.match(docker, /ENTRYPOINT \["node", "\/opt\/container\/entrypoint.mjs"\]/);
+  assert.match(docker, /ENTRYPOINT \["\/usr\/local\/bin\/node", "\/opt\/container\/entrypoint.mjs"\]/);
   assert.ok(!read('entrypoint.mjs').includes('spawn('));
-  assert.ok(!read('child.sh').includes('npx'));
+  assert.ok(!docker.includes('child.sh'));
 });
 
 test('workflow is manual, action pins are immutable, publication is disabled', () => {

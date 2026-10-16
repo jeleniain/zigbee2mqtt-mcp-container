@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { APPLICATION } from './child-policy.mjs';
 import { allowedHosts } from './http-policy.mjs';
 
 export const tools = Object.freeze([
@@ -46,7 +47,8 @@ export function configure(env, args = []) {
   // Different container starts get different prefixes, even with identical hostnames.
   env.Z2M_CONTAINER_CLIENT_PREFIX = `z2m-mcp-${randomUUID()}`;
   return [
-    '--stdio', 'exec /bin/sh /opt/container/child.sh',
+    // A fixed name, not a shell command: child-policy.mjs launches it directly.
+    '--stdio', APPLICATION,
     '--outputTransport', 'streamableHttp',
     '--host', '0.0.0.0',
     '--port', '8000',

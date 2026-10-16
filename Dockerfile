@@ -28,15 +28,9 @@ RUN npm ci --ignore-scripts --no-audit --no-fund \
 RUN node /dependency-overlay/trim-runtime.mjs /build/zigbee2mqtt-mcp/node_modules /build/supergateway/node_modules
 
 # Clean runtime lineage: do not inherit npm, Corepack, or build-image layers.
-FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS runtime
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ca-certificates=20230311+deb12u1 \
-        libstdc++6=12.2.0-14+deb12u1 \
-        perl-base=5.36.0-7+deb12u4 \
-    && rm -rf /var/lib/apt/lists/* \
-    && groupadd --gid 1000 node \
-    && useradd --uid 1000 --gid node --shell /usr/sbin/nologin --no-create-home node
+# Distroless cc keeps glibc, libstdc++ and dpkg metadata for scanning, but no
+# shell, package manager, util-linux, ncurses or perl.
+FROM gcr.io/distroless/cc-debian12:nonroot@sha256:9dac0a79194e45a7da0158a9c6da57b217585af0786db3845d1f0ec1a0dd182f AS runtime
 COPY --from=build /usr/local/bin/node /usr/local/bin/node
 COPY --from=build /usr/local/LICENSE /usr/share/licenses/node/LICENSE
 LABEL org.opencontainers.image.title="zigbee2mqtt-mcp-container" \
@@ -52,9 +46,9 @@ COPY --from=build /build/supergateway/node_modules/ /opt/supergateway/node_modul
 COPY --from=build /build/supergateway/package.json /opt/supergateway/package.json
 # Dependency notices remain in each unmodified production node_modules tree.
 COPY licenses/ /usr/share/licenses/zigbee2mqtt-mcp-container/
-COPY entrypoint.mjs child.sh http-policy.mjs child-policy.mjs ./
-USER node
+COPY entrypoint.mjs http-policy.mjs child-policy.mjs ./
+USER 65532:65532
 EXPOSE 8000
 STOPSIGNAL SIGTERM
-ENTRYPOINT ["node", "/opt/container/entrypoint.mjs"]
+ENTRYPOINT ["/usr/local/bin/node", "/opt/container/entrypoint.mjs"]
 CMD []
