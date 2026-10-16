@@ -43,8 +43,17 @@ async function probe() {
   }
   assert.ok(ready, 'Gateway must start and reject anonymous requests');
   assert.equal((await fetch(endpoint, { headers: { authorization: 'Bearer wrong' } })).status, 401);
-  for (const extra of [{ host: 'unexpected.example' }, { origin: 'https://unexpected.example' }, { origin: 'null' }]) {
-    assert.equal((await fetch(endpoint, { headers: { authorization: `Bearer ${key}`, ...extra } })).status, 403);
+  // fetch silently replaces a custom Host header, so send these with node:http.
+  const { request } = await import('node:http');
+  const status = (extra) => new Promise((resolve, reject) => {
+    request(endpoint, { headers: { host: '127.0.0.1:8000', authorization: `Bearer ${key}`, ...extra } }, (response) => {
+      response.resume();
+      resolve(response.statusCode);
+    }).on('error', reject).end();
+  });
+  assert.equal(await status({}), 400, 'Allowed authority must pass policy and reach session handling');
+  for (const extra of [{ host: 'unexpected.example' }, { host: '127.0.0.1:8001' }, { origin: 'https://unexpected.example' }, { origin: 'null' }]) {
+    assert.equal(await status(extra), 403, JSON.stringify(extra));
   }
   const rpc = async (message) => {
     const response = await fetch(endpoint, {
