@@ -48,7 +48,7 @@ try {
   assert.notEqual(result.status, 0, 'Deleted-layer canary must fail the scanner');
   const findings = JSON.parse(readFileSync(report, 'utf8'));
   assert.ok(findings.some((finding) => finding.RuleID === 'github-pat'));
-  for (const path of ['credential.txt', 'nested.txt.gz', 'v8-internal.h', 'plain.gz.uncompressed-text', 'node_modules/example/index.js']) {
+  for (const path of ['credential.txt', 'nested.txt.gz', 'v8-internal.h', 'plain.uncompressed-text', 'node_modules/example/index.js']) {
     assert.ok(findings.some((finding) => finding.File.includes(path)), `Canary not detected in ${path}`);
   }
   assert.ok(!/Scanner reported an analysis error/.test(result.stderr), 'Canary scan must have complete coverage');

@@ -51,8 +51,9 @@ const extractRegular = (source, destination) => {
     const magic = Buffer.alloc(2);
     try { readSync(fd, magic, 0, 2, 0); } finally { closeSync(fd); }
     if (magic[0] !== 0x1f || magic[1] !== 0x8b) {
-      assert.ok(!existsSync(`${path}.uncompressed-text`), 'Cannot overwrite an image member while normalizing its suffix');
-      renameSync(path, `${path}.uncompressed-text`);
+      const normalized = `${path.slice(0, -3)}.uncompressed-text`;
+      assert.ok(!existsSync(normalized), 'Cannot overwrite an image member while normalizing its suffix');
+      renameSync(path, normalized);
     }
   }
 };
