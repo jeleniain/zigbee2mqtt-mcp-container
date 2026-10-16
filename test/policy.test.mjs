@@ -67,18 +67,39 @@ test('container starts have unique prefixes for per-child MQTT client IDs', () =
   assert.notEqual(first.Z2M_CONTAINER_CLIENT_PREFIX, second.Z2M_CONTAINER_CLIENT_PREFIX);
 });
 
-test('real startup rejects invalid configuration without revealing credentials', () => {
-  const env = { ...process.env, ...valid(), Z2M_MQTT_URL: 'mqtts://private:do-not-print@broker' };
+test('real startup names the invalid setting without revealing any value', () => {
   const entrypoint = fileURLToPath(new URL('../entrypoint.mjs', import.meta.url));
-  const result = spawnSync(process.execPath, [entrypoint], { env, encoding: 'utf8' });
+  const marker = 'do-not-print';
+  const cases = [
+    [{ Z2M_MQTT_URL: `mqtts://private:${marker}@broker` }, /Z2M_MQTT_USERNAME/],
+    [{ Z2M_MQTT_URL: `mqtt://${marker}.example` }, /Z2M_MQTT_URL/],
+    [{ Z2M_MQTT_URL: `not a url ${marker}` }, /Z2M_MQTT_URL/],
+    [{ Z2M_MQTT_URL: undefined }, /Z2M_MQTT_URL/],
+    [{ SUPERGATEWAY_API_KEY: `${marker} with spaces` }, /SUPERGATEWAY_API_KEY/],
+    [{ SUPERGATEWAY_API_KEY: undefined }, /SUPERGATEWAY_API_KEY/],
+    [{ SUPERGATEWAY_API_KEY_FILE: `/run/${marker}` }, /SUPERGATEWAY_API_KEY/],
+    [{ Z2M_MQTT_CLIENT_ID: marker }, /Z2M_MQTT_CLIENT_ID/],
+    [{ Z2M_HTTP_ALLOWED_HOSTS: `user:${marker}@gateway` }, /Z2M_HTTP_ALLOWED_HOSTS/],
+    [{ Z2M_HTTP_ALLOWED_HOSTS: undefined }, /Z2M_HTTP_ALLOWED_HOSTS/],
+  ];
+  for (const [override, expected] of cases) {
+    const env = { ...process.env, ...valid(), ...override };
+    for (const [name, value] of Object.entries(override)) if (value === undefined) delete env[name];
+    const result = spawnSync(process.execPath, [entrypoint], { env, encoding: 'utf8' });
+    assert.equal(result.status, 1, JSON.stringify(Object.keys(override)));
+    assert.match(result.stderr, /^Container startup refused: /);
+    assert.match(result.stderr, expected);
+    assert.equal(result.stderr.trim().split('\n').length, 1, 'One line, no stack trace');
+    assert.ok(!`${result.stdout}${result.stderr}`.includes(marker));
+  }
+});
+
+test('gateway failures after valid configuration stay generic', () => {
+  // Valid settings, but this host has no /opt/supergateway: the import fails.
+  const entrypoint = fileURLToPath(new URL('../entrypoint.mjs', import.meta.url));
+  const result = spawnSync(process.execPath, [entrypoint], { env: { ...process.env, ...valid() }, encoding: 'utf8', input: '' });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /Container startup refused/);
-  assert.ok(!`${result.stdout}${result.stderr}`.includes('do-not-print'));
-  const noKey = { ...process.env, Z2M_MQTT_URL: 'mqtt://127.0.0.1:1883' };
-  delete noKey.SUPERGATEWAY_API_KEY;
-  const missing = spawnSync(process.execPath, [entrypoint], { env: noKey, encoding: 'utf8' });
-  assert.equal(missing.status, 1);
-  assert.match(missing.stderr, /Container startup refused/);
+  assert.equal(result.stderr.trim(), 'Container startup refused: gateway failed to start');
 });
 
 test('successful startup imports the gateway in-process and survives detached stdin EOF', () => {
@@ -158,13 +179,14 @@ test('workflow is manual, action pins are immutable, publication is disabled', (
   for (const action of actions) assert.match(action, /^[\w/-]+@[0-9a-f]{40}$/);
   assert.match(workflow, /publish:\n[\s\S]*?type: boolean\n        default: false/);
   assert.match(workflow, /stable:\n[\s\S]*?type: boolean\n        default: false/);
-  // Release approval must be a reviewed commit removing this refusal.
-  assert.match(workflow, /- name: Refuse publication until a release is approved\n        if: \$\{\{ inputs.publish \|\| inputs.stable \}\}\n        run: \|\n[^\n]*\n          exit 1\n/);
+  assert.match(workflow, /- name: Refuse a stable tag without publication\n        if: \$\{\{ inputs.stable && !inputs.publish \}\}\n        run: \|\n[^\n]*\n          exit 1\n/);
   assert.match(workflow, /^permissions:\n  contents: read\n\n/m);
   const validate = workflow.slice(workflow.indexOf('\n  validate:\n'), workflow.indexOf('\n  publish:\n'));
   const publish = workflow.slice(workflow.indexOf('\n  publish:\n'));
   assert.ok(validate.length > 0 && publish.length > 0);
-  assert.ok(validate.indexOf('Refuse publication') < validate.indexOf('actions/checkout'), 'Refusal runs first');
+  assert.ok(validate.indexOf('Refuse a stable tag') < validate.indexOf('actions/checkout'), 'Refusal runs first');
+  // With no code-level refusal, reviewer approval on the environment is the release gate.
+  assert.ok(publish.indexOf('required_reviewers') < publish.indexOf('docker login'));
   for (const write of ['packages: write', 'docker login', 'docker push', 'push: true', 'secrets.']) {
     assert.ok(!validate.includes(write), `validate must not contain ${write}`);
   }

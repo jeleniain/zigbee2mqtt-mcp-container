@@ -34,6 +34,8 @@ FROM gcr.io/distroless/cc-debian12:nonroot@sha256:9dac0a79194e45a7da0158a9c6da57
 COPY --from=build /usr/local/bin/node /usr/local/bin/node
 COPY --from=build /usr/local/LICENSE /usr/share/licenses/node/LICENSE
 LABEL org.opencontainers.image.title="zigbee2mqtt-mcp-container" \
+    org.opencontainers.image.source="https://github.com/jeleniain/zigbee2mqtt-mcp-container" \
+    org.opencontainers.image.licenses="MIT" \
     io.zigbee2mqtt-mcp.revision="508a9215f78672f43bd64571d38c3ae2342ea040" \
     io.supergateway.revision="8079a99bd8db85700f415b6336b44b81c0ab5483"
 ENV NODE_ENV=production

@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Push the exact scanned image to GHCR (blocked until a release is approved)
+        description: Push the exact scanned image to GHCR (requires ghcr-release reviewer approval)
         type: boolean
         default: false
       stable:
-        description: Also move the latest tag (requires publish; blocked until a release is approved)
+        description: Also move the latest tag (requires publish)
         type: boolean
         default: false
 
@@ -25,12 +25,12 @@ jobs:
       config-digest: ${{ steps.record.outputs.config-digest }}
       archive-sha256: ${{ steps.record.outputs.archive-sha256 }}
     steps:
-      # Release approval is a reviewed commit that removes this step, plus
-      # required reviewers on the ghcr-release environment (checked below).
-      - name: Refuse publication until a release is approved
-        if: ${{ inputs.publish || inputs.stable }}
+      # Each release is approved by a required reviewer on the ghcr-release
+      # environment; the publish job refuses an environment without one.
+      - name: Refuse a stable tag without publication
+        if: ${{ inputs.stable && !inputs.publish }}
         run: |
-          echo '::error::Publication is disabled until the owner approves a release.'
+          echo '::error::stable requires publish.'
           exit 1
       - name: Keep reports and scanner caches outside the checkout
         run: |
