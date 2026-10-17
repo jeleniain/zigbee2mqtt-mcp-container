@@ -5,10 +5,15 @@
 export const APPLICATION = 'z2m-application';
 export const APPLICATION_ENTRY = '/opt/zigbee2mqtt-mcp/dist/index.js';
 
+// Capacity is a refusal, not a failure: gateway integrations recognise this
+// code, answer 503, and let every other spawn error behave as upstream does.
+export const CHILD_CAPACITY = 'Z2M_GATEWAY_CHILD_CAPACITY';
+export const RETRY_AFTER_SECONDS = 60;
+
 export function createChildLimiter(limit = 4) {
   let active = 0;
   return (spawn, ...args) => {
-    if (active >= limit) throw new Error('Gateway child capacity reached');
+    if (active >= limit) throw Object.assign(new Error('Gateway child capacity reached'), { code: CHILD_CAPACITY });
     active++;
     let released = false;
     const release = () => {
@@ -24,6 +29,38 @@ export function createChildLimiter(limit = 4) {
       throw error;
     }
   };
+}
+
+const REFUSAL = 'Gateway session capacity reached';
+
+export const atCapacity = (error) => error?.code === CHILD_CAPACITY;
+
+// A new session refused at capacity: fixed text, no values, and a retry hint.
+// Returns false, sending nothing, for any other error.
+export function refuseAtCapacity(error, res) {
+  if (!atCapacity(error)) return false;
+  if (!res.headersSent) {
+    res.status(503).set('Retry-After', String(RETRY_AFTER_SECONDS)).type('text/plain').send(REFUSAL);
+  }
+  return true;
+}
+
+// The same refusal for a 2026-07-28 request, whose answer is a Web Response.
+export const capacityResponse = () => new Response(REFUSAL, {
+  status: 503,
+  headers: { 'content-type': 'text/plain; charset=utf-8', 'retry-after': String(RETRY_AFTER_SECONDS) },
+});
+
+// A stateful session's transport is connected before its child starts. When
+// the child is refused, close that transport: it never got a session id, so
+// nothing registered it, and nothing else will.
+export function closeOnRefusal(transport, start) {
+  try {
+    return start();
+  } catch (error) {
+    if (atCapacity(error)) void transport.close().catch(() => {});
+    throw error;
+  }
 }
 
 // The gateway bearer credential is not an MQTT child credential: build the

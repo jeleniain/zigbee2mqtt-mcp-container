@@ -205,6 +205,8 @@ test('workflow is manual, action pins are immutable, publication is disabled', (
   assert.match(workflow, /gitleaks git/);
   assert.match(workflow, /secrets-image-layers.json/);
   assert.match(workflow, /vulnerability-gate.mjs/);
+  assert.match(workflow, /node scripts\/install-gateway-policy\.mjs "\$fixture"\n          echo "Z2M_GATEWAY_FIXTURE=\$fixture"/);
+  assert.ok(validate.indexOf('Z2M_GATEWAY_FIXTURE=') < validate.indexOf('run: node --test'), 'Capacity fixture precedes tests');
   assert.match(workflow, /run: node --test/);
   assert.match(read('scripts/container-smoke.mjs'), /'--network', 'none'/);
 });

@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
 import { spawn as realSpawn } from 'node:child_process';
-import { APPLICATION, APPLICATION_ENTRY, createApplicationLauncher, createChildLimiter } from '../child-policy.mjs';
+import {
+  APPLICATION, APPLICATION_ENTRY, CHILD_CAPACITY, capacityResponse, closeOnRefusal, createApplicationLauncher,
+  createChildLimiter, refuseAtCapacity,
+} from '../child-policy.mjs';
 
 const env = () => ({ SUPERGATEWAY_API_KEY: 'test-only-not-a-real-secret', Z2M_CONTAINER_CLIENT_PREFIX: 'z2m-mcp-fixture', PATH: '/usr/bin' });
 
@@ -75,4 +78,68 @@ test('synchronous and asynchronous spawn failures restore capacity', () => {
   assert.throws(() => admit(() => new EventEmitter()), /capacity/);
   alive.emit('exit', 1);
   assert.doesNotThrow(() => admit(() => new EventEmitter()));
+});
+
+const capacityError = () => {
+  const admit = createChildLimiter(0);
+  try { admit(() => assert.fail('Refused children must not spawn')); } catch (error) { return error; }
+  assert.fail('A full limiter must refuse');
+};
+
+// Records what the gateway's Express response was sent.
+const response = (headersSent = false) => {
+  const sent = { headers: {}, headersSent };
+  const res = {
+    get headersSent() { return sent.headersSent; },
+    status(code) { sent.status = code; return res; },
+    set(name, value) { sent.headers[name.toLowerCase()] = value; return res; },
+    type(type) { sent.type = type; return res; },
+    send(body) { sent.body = body; sent.headersSent = true; return res; },
+  };
+  return { res, sent };
+};
+
+test('capacity is a distinguishable refusal answered 503 with a fixed body and retry hint', async () => {
+  const error = capacityError();
+  assert.equal(error.code, CHILD_CAPACITY);
+  const { res, sent } = response();
+  assert.equal(refuseAtCapacity(error, res), true);
+  assert.deepEqual(sent, {
+    headers: { 'retry-after': '60' }, headersSent: true, status: 503,
+    type: 'text/plain', body: 'Gateway session capacity reached',
+  });
+  const web = capacityResponse();
+  assert.equal(web.status, 503);
+  assert.equal(web.headers.get('retry-after'), '60');
+  assert.equal(await web.text(), 'Gateway session capacity reached');
+});
+
+test('other errors are not refusals and send nothing', () => {
+  const spawnFailure = Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' });
+  for (const error of [spawnFailure, new Error('Gateway child capacity reached'), undefined, null, 'text']) {
+    const { res, sent } = response();
+    assert.equal(refuseAtCapacity(error, res), false);
+    assert.deepEqual(sent, { headers: {}, headersSent: false });
+  }
+  const { res, sent } = response(true);
+  assert.equal(refuseAtCapacity(capacityError(), res), true, 'Still handled when a response already started');
+  assert.equal(sent.status, undefined, 'But nothing more is written to it');
+});
+
+test('a refused session closes only its own unregistered transport and rethrows', () => {
+  const transport = () => {
+    const state = { closed: 0 };
+    state.transport = { close: async () => { state.closed++; } };
+    return state;
+  };
+  const refused = transport();
+  const error = capacityError();
+  assert.throws(() => closeOnRefusal(refused.transport, () => { throw error; }), (thrown) => thrown === error);
+  assert.equal(refused.closed, 1);
+  const failed = transport();
+  assert.throws(() => closeOnRefusal(failed.transport, () => { throw new Error('synthetic spawn failure'); }), /synthetic/);
+  assert.equal(failed.closed, 0, 'Unrelated failures keep upstream behaviour');
+  const started = transport();
+  assert.equal(closeOnRefusal(started.transport, () => 'peer'), 'peer');
+  assert.equal(started.closed, 0);
 });

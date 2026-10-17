@@ -63,7 +63,7 @@ Excluded: all write tools, `z2m_bridge_info`, `z2m_network_map`, `z2m_coordinato
 - **Put HTTPS in front of it.** The listener is plain HTTP. The API key is authentication, not encryption. Use a reverse proxy or tunnel with TLS, and do not expose port 8000 directly.
 - **Restrict the broker user.** The container refuses to publish, but the broker's ACL is the real boundary: allow read on the Zigbee2MQTT topics and nothing else.
 - **Non-browser clients only.** Requests carrying an `Origin` header are rejected.
-- **Limits.** At most 4 concurrent MCP sessions; idle sessions close after 30 minutes. Add Docker memory, CPU and PID limits as you see fit.
+- **Limits.** At most 4 concurrent MCP sessions; idle sessions close after 30 minutes. A new session over the limit is refused with HTTP 503 and `Retry-After: 60`; existing sessions keep running. Each client chat or window holds its own session until it ends or goes idle, so close unused ones or wait for them to expire. Add Docker memory, CPU and PID limits as you see fit.
 - **Device names and group names are returned as-is.** Do not put secrets in them.
 - Passing scans is not proof of safety. Remaining findings are in each CI run's security reports.
 
@@ -71,7 +71,7 @@ Excluded: all write tools, `z2m_bridge_info`, `z2m_network_map`, `z2m_coordinato
 
 - Both upstream projects are downloaded at pinned commits with verified checksums (`508a921` and `8079a99`), then built from reviewed lockfiles that only update dependency versions with fixes ([dependencies/](dependencies/)).
 - [scripts/patch-upstream-security.mjs](scripts/patch-upstream-security.mjs) checks the exact upstream source, then adds the output and intake limits from [scripts/security-boundary.mjs](scripts/security-boundary.mjs) and disables publishing. If upstream changes, the build fails instead of patching blindly.
-- [scripts/install-gateway-policy.mjs](scripts/install-gateway-policy.mjs) adds the Host/Origin check ([http-policy.mjs](http-policy.mjs)) and the session limit and direct launcher ([child-policy.mjs](child-policy.mjs)) to the gateway.
+- [scripts/install-gateway-policy.mjs](scripts/install-gateway-policy.mjs) adds the Host/Origin check ([http-policy.mjs](http-policy.mjs)) and the session limit, its 503 refusal and the direct launcher ([child-policy.mjs](child-policy.mjs)) to the gateway. It checks the exact upstream source the same way.
 - The runtime is `gcr.io/distroless/cc-debian12:nonroot` with only the Node binary added: no shell, package manager, npm or Corepack. It runs as UID 65532.
 
 ## CI and releases
@@ -80,7 +80,7 @@ Excluded: all write tools, `z2m_bridge_info`, `z2m_network_map`, `z2m_coordinato
 
 With `publish` ticked, the `ghcr-release` environment requires a reviewer's approval. The publish job then pushes the exact archive that was tested and scanned, without rebuilding, and checks that the registry's config digest matches it. `stable` also moves `latest`.
 
-Local tests: `node --test`. Set `Z2M_SECURITY_FIXTURE` to a patched, built upstream checkout to also run the real-handler leak test.
+Local tests: `node --test`. Set `Z2M_SECURITY_FIXTURE` to a patched, built upstream checkout to also run the real-handler leak test, and `Z2M_GATEWAY_FIXTURE` to a built supergateway checkout patched by `install-gateway-policy.mjs` to run the session capacity test. The workflow shows how both are built.
 
 ## Licenses
 

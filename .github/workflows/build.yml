@@ -57,7 +57,20 @@ jobs:
           node scripts/patch-upstream-security.mjs "$fixture"
           (cd "$fixture" && npm ci --ignore-scripts --no-audit --no-fund && npm run build)
           echo "Z2M_SECURITY_FIXTURE=$fixture" >> "$GITHUB_ENV"
-      - name: Test guards, fixed policy, pins, license bytes, and real-handler leak boundary
+      - name: Build the checksum-verified, policy-patched gateway for session capacity tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture="$RUNNER_TEMP/z2m-gateway-fixture"
+          mkdir -p "$fixture"
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/supergateway.tar.gz" https://codeload.github.com/supercorp-ai/supergateway/tar.gz/8079a99bd8db85700f415b6336b44b81c0ab5483
+          echo "08d57d026ebeff81ceb58f665c0fe8b729e6d702e2dfe2c904c3b1df91524840  $RUNNER_TEMP/supergateway.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/supergateway.tar.gz" --strip-components=1 -C "$fixture"
+          node dependencies/overlay.mjs supergateway "$fixture"
+          (cd "$fixture" && npm ci --ignore-scripts --no-audit --no-fund && npm run build)
+          node scripts/install-gateway-policy.mjs "$fixture"
+          echo "Z2M_GATEWAY_FIXTURE=$fixture" >> "$GITHUB_ENV"
+      - name: Test guards, fixed policy, pins, license bytes, real-handler leak boundary, and session capacity
         run: node --test
       - name: Install checksum-verified security scanners
         id: scanners
