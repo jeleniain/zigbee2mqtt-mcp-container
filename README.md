@@ -26,7 +26,7 @@ docker run -d --name zigbee2mqtt-mcp \
   ghcr.io/jeleniain/zigbee2mqtt-mcp-container:latest
 ```
 
-On Unraid, add a container with that repository, put the flags in **Extra Parameters**, and add each variable. Keep the API key and MQTT password in Unraid, never in this repository or an image.
+On Unraid, add a container with that repository, put the flags in **Extra Parameters**, and add each variable. Keep the API key and MQTT password in Unraid, never in this repository or an image. For the template's **Icon URL**, use `https://raw.githubusercontent.com/jeleniain/zigbee2mqtt-mcp-container/main/assets/icon.png`.
 
 MCP clients connect to `http://<host>:8000/mcp` with the header `Authorization: Bearer <SUPERGATEWAY_API_KEY>`.
 

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1f2937"/>
+      <stop offset="1" stop-color="#0f172a"/>
+    </linearGradient>
+    <linearGradient id="hex" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd166"/>
+      <stop offset="1" stop-color="#f4a300"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+  <!-- Honeycomb hexagon (Zigbee) -->
+  <polygon points="128,28 210,75 210,169 128,216 46,169 46,75" fill="url(#hex)"/>
+  <!-- Zigbee mesh: three nodes linked to a centre -->
+  <g stroke="#1f2937" stroke-width="9" stroke-linecap="round">
+    <line x1="128" y1="122" x2="128" y2="72"/>
+    <line x1="128" y1="122" x2="86" y2="148"/>
+    <line x1="128" y1="122" x2="170" y2="148"/>
+  </g>
+  <g fill="#1f2937">
+    <circle cx="128" cy="122" r="17"/>
+    <circle cx="128" cy="70" r="13"/>
+    <circle cx="84" cy="150" r="13"/>
+    <circle cx="172" cy="150" r="13"/>
+  </g>
+  <!-- MCP badge -->
+  <rect x="150" y="174" width="92" height="56" rx="16" fill="#38bdf8" stroke="#0f172a" stroke-width="6"/>
+  <text x="196" y="212" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-weight="800" font-size="30" fill="#0f172a">MCP</text>
+</svg>
